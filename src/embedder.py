@@ -2,13 +2,45 @@ import hashlib
 import math
 import re
 
-from config import EMBEDDING_DIMENSIONS
+from config import (
+    DASHSCOPE_API_KEY,
+    DASHSCOPE_BASE_URL,
+    EMBEDDING_DIMENSIONS,
+    QWEN_EMBEDDING_BATCH_SIZE,
+    QWEN_EMBEDDING_MODEL,
+    QWEN_TIMEOUT_SECONDS,
+)
+from src.openai_compatible_client import OpenAICompatibleClient
 
 
 class EmbedderAgent:
+    def __init__(self):
+        self.client = None
+        if DASHSCOPE_API_KEY:
+            self.client = OpenAICompatibleClient(
+                api_key=DASHSCOPE_API_KEY,
+                base_url=DASHSCOPE_BASE_URL,
+                timeout=QWEN_TIMEOUT_SECONDS,
+            )
+
     def embed_texts(self, text_chunks: list) -> list:
-        """将文本块生成向量 embedding，返回向量列表。"""
+        """Generate embeddings for text chunks."""
+        if self.client:
+            return self._embed_remote(text_chunks)
         return [self._embed_one(chunk) for chunk in text_chunks]
+
+    def _embed_remote(self, text_chunks: list) -> list:
+        vectors = []
+        for start in range(0, len(text_chunks), QWEN_EMBEDDING_BATCH_SIZE):
+            batch = text_chunks[start : start + QWEN_EMBEDDING_BATCH_SIZE]
+            vectors.extend(
+                self.client.create_embeddings(
+                    model=QWEN_EMBEDDING_MODEL,
+                    inputs=batch,
+                    dimensions=EMBEDDING_DIMENSIONS,
+                )
+            )
+        return vectors
 
     def _embed_one(self, text: str) -> list:
         vector = [0.0] * EMBEDDING_DIMENSIONS

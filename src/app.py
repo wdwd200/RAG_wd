@@ -1,7 +1,8 @@
+import argparse
 import json
 from pathlib import Path
 
-from config import CHUNKS_FILE, INPUT_DOCS_DIR, PARSED_TEXTS_DIR, SUPPORTED_INPUT_EXTENSIONS
+from config import BASE_DIR, CHUNKS_FILE, INPUT_DOCS_DIR, PARSED_TEXTS_DIR, SUPPORTED_INPUT_EXTENSIONS
 from src.converter import ConverterAgent
 from src.embedder import EmbedderAgent
 from src.file_detector import FileDetectorAgent
@@ -62,9 +63,9 @@ class AppAgent:
                 all_chunks.append(chunk)
                 metadata.append(
                     {
-                        "source": str(document),
-                        "pdf_path": pdf_path,
-                        "parsed_text_path": str(parsed_path),
+                        "source": self._relative_path(document),
+                        "pdf_path": self._relative_path(Path(pdf_path)),
+                        "parsed_text_path": self._relative_path(parsed_path),
                         "chunk_id": chunk_id,
                         "text": chunk,
                     }
@@ -77,9 +78,9 @@ class AppAgent:
         self._save_chunks(metadata)
         self.logger.log(f"索引构建完成: {len(metadata)} chunks")
 
-    def ask(self, question: str):
-        """调用 RAGAgent.answer_question 并输出答案。"""
-        answer = self.rag.answer_question(question)
+    def ask(self, question: str, top_k: int = 5):
+        """Call RAGAgent.answer_question and print the answer."""
+        answer = self.rag.answer_question(question, top_k=top_k)
         print(answer)
         return answer
 
@@ -94,9 +95,36 @@ class AppAgent:
         CHUNKS_FILE.parent.mkdir(parents=True, exist_ok=True)
         CHUNKS_FILE.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    def _relative_path(self, path: Path) -> str:
+        try:
+            return str(path.resolve().relative_to(BASE_DIR))
+        except ValueError:
+            return str(path)
+
 
 def main():
+    parser = argparse.ArgumentParser(description="RAG_wd command line")
+    subparsers = parser.add_subparsers(dest="command")
+
+    subparsers.add_parser("build-index", help="Build vector index from data/input_docs")
+
+    ask_parser = subparsers.add_parser("ask", help="Ask a question against the existing index")
+    ask_parser.add_argument("question")
+    ask_parser.add_argument("--top-k", type=int, default=5)
+
+    subparsers.add_parser("shell", help="Build index and enter interactive question mode")
+    args = parser.parse_args()
+
     app = AppAgent()
+
+    if args.command == "build-index":
+        app.build_index()
+        return
+
+    if args.command == "ask":
+        app.ask(args.question, top_k=args.top_k)
+        return
+
     app.build_index()
     while True:
         question = input("请输入问题（exit 退出）: ").strip()
